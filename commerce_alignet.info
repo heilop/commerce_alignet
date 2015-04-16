@@ -1,0 +1,6 @@
+name = Commerce Alignet
+description = This payment method is provided by Alignet.
+package = Commerce (contrib)
+dependencies[] = commerce
+dependencies[] = commerce_payment
+core = 7.x

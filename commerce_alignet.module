@@ -1,0 +1,189 @@
+<?php
+
+/**
+ * @file
+ * Alignet payment method for Drupal Commerce.
+ */
+
+define('COMMERCE_ALIGNET_URL_TEST', 'https://test2.alignetsac.com/VPOS/MM/transactionStart20.do');
+define('COMMERCE_ALIGNET_URL_PROD', 'https://test2.alignetsac.com/VPOS/MM/transactionStart20.do');
+
+/**
+ * Implements hook_commerce_payment_method_info().
+ */
+function commerce_alignet_commerce_payment_method_info() {
+  $payment_methods = array();
+
+  $payment_methods['commerce_alignet'] = array(
+    'title' => t('Alignet.'),
+    'description' => t('Payment method provided by Alignet.'),
+    'active' => TRUE,
+    'terminal' => FALSE,
+    'offsite' => TRUE,
+    'offsite_autoredirect' => TRUE,
+  );
+
+  return $payment_methods;
+}
+
+/**
+ * Payment method callback: submit form.
+ */
+function commerce_alignet_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
+  $form = array();
+  $form['commerce_alignet_information'] = array(
+    '#markup' => t('Continue to next step to process payment.'),
+  );
+  return $form;
+}
+
+/**
+ * Get server: Test or Production.
+ */
+function commerce_alignet_get_url() {
+  $payment_method_settings = commerce_payment_method_instance_load('commerce_alignet|commerce_payment_commerce_alignet');
+  if (isset($payment_method_settings['settings']) && $payment_method_settings['settings']['mode'] == 'PROD') {
+    return COMMERCE_ALIGNET_URL_PROD;
+  }
+  return COMMERCE_ALIGNET_URL_TEST;
+}
+
+/**
+ * Payment method callback: submit form submission.
+ */
+function commerce_alignet_submit_form_submit($payment_method, $pane_form, $pane_values, $order, $charge) {
+
+  // Some pricing variables for payment method. Useful for some tweaks:
+  $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+  $payment_base = commerce_price_component_total($order_wrapper->commerce_order_total->value(), 'base_price');
+  $payment_taxes = $charge['amount'] - $payment_base['amount'];
+
+  $transaction = commerce_payment_transaction_new('commerce_alignet', $order->order_id);
+  $transaction->instance_id = $payment_method['instance_id'];
+  $transaction->amount = $charge['amount'];
+  $transaction->currency_code = $charge['currency_code'];
+
+  if ($order_wrapper) { // Or any other condition...
+    if ($order_wrapper) { // Or any other condition...
+      $transaction->status = COMMERCE_PAYMENT_STATUS_SUCCESS;
+      $transaction->remote_id = $request['remote_id'];
+      $transaction->remote_status = $request['status'];
+    }
+    else {
+      $transaction->status = COMMERCE_PAYMENT_STATUS_FAILURE;
+      watchdog('commerce_alignet', 'Could not process payment.', NULL, WATCHDOG_ERROR, NULL);
+    }
+  }
+  commerce_payment_transaction_save($transaction);
+}
+
+/**
+ * Add parameters method eCollect.
+ */
+function commerce_alignet_redirect_form($form, &$form_state, $order, $payment_method) {
+  require_once 'lib/vpos_plugin.php';
+  // Initialize data: Move this to the payment method settings... and create a function...
+  $llaveVPOSCryptoPub = 	"-----BEGIN PUBLIC KEY-----\n".
+  		"MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDTJt+hUZiShEKFfs7DShsXCkoq\n".
+  		"TEjv0SFkTM04qHyHFU90Da8Ep1F0gI2SFpCkLmQtsXKOrLrQTF0100dL/gDQlLt0\n".
+  		"Ut8kM/PRLEM5thMPqtPq6G1GTjqmcsPzUUL18+tYwN3xFi4XBog4Hdv0ml1SRkVO\n".
+  		"DRr1jPeilfsiFwiO8wIDAQAB\n".
+  		"-----END PUBLIC KEY-----";
+  
+  
+  $llavePrivadaFirmaComercio = "-----BEGIN RSA PRIVATE KEY-----\n".
+  		"MIICWwIBAAKBgQCFxMJYs/KDpEzNnXJpM+Psj/gesSCGK/JfBHhMUoAk5FNPEmJE\n".
+  		"XYCoOYttxS9IrF266rYtYzIAO6Opb4+YYbnVa2iIxkpPR1uh+ZhyjoTzEBXgLThr\n".
+  		"701pOWWkZAQmJ2lcJ15rb/xessSvuIUqueZCPr4gwpdsoUR5mi4jTnLBqwIDAQAB\n".
+  		"AoGABkY+X27BV09jktlpvmmCrVvrZXUlc2WoTrCk+996x0A2cCUKmu5P1JQuaA2x\n".
+  		"tBTxqIzN0r8uXzhs6suizqD22Gx+7w0B3o4vPsxmro72zq3MCfkGchXNSrawzqdS\n".
+  		"6/d+yzg0B3BXGhdep0JNd+q9lzY+VyazPSv4fOYMKzj511ECQQC62utDQ1QfQGro\n".
+  		"KU7HLCjXKFJ3cxfOZxT7lSUsKhmbTW+w/elQwJNCLm5xdCbPAO20TWLPXQp7M5/p\n".
+  		"t+tpuzJdAkEAt0Td+YpD8CjKgGe7NalEbQA6LP3dr1vgUYIaReDFOcQWhMN5Q3+M\n".
+  		"RmK8c3oYYwZ6skj8J/6Zgwid2a3o2XgTpwJAJfCrkmXKX+oZivhQOZra1A0o6X4i\n".
+  		"GFPP6+F1wcjumB0aD6sOw8nGXMrGvBykgKWknlaUOJygszFhR/iDQV20NQJALAeW\n".
+  		"kLogIlWaeQjy2CyHbOyODXscRGH9XXe1Wi5rE7rBcjoIKyg8ijh0cAXYUAohdi3E\n".
+  		"rtMjDHEIg2CdvYl0pwJAN34xlXAzIhuz1cDOpqPVTZPxZbRo6lsybhiBKy8N9AFp\n".
+  		"5dT9vKuIyL9pmF4GvFtCdz3Ms1W52g8nE24DSva0fw==\n".
+  		"-----END RSA PRIVATE KEY-----";
+  $VI = "0000000000000000";
+  $arrayIn['acquirerId'] = '3';
+  $arrayIn['commerceId'] = '559';
+  $arrayIn['commerceMallId'] = '1';
+  $arrayIn['terminalCode'] = '00000000';
+  $arrayIn['purchaseOperationNumber'] = "".((int)(microtime()*1000000));
+  $arrayIn['purchaseAmount'] = '100';
+  $arrayIn['purchaseCurrencyCode'] = '840';
+  $arrayIn['reserved1'] = 'sp';
+  VPOSSend($arrayIn, $arrayOut, $llaveVPOSCryptoPub, $llavePrivadaFirmaComercio, $VI);
+  // Set some form settings:
+  $url = commerce_alignet_get_url();
+  $form['#action'] = url($url, array('external' => TRUE));
+  $form['#method'] = 'POST';
+  // Required fields: May be improved...
+  $form['IDACQUIRER'] = array(
+    '#type' => 'hidden',
+  	'#value' => 3,
+  	'#name' => 'IDACQUIRER',
+  	'#attributes' => array('id' => 'IDACQUIRER'),
+  );
+  $form['IDCOMMERCE'] = array(
+    '#type' => 'hidden',
+    '#value' => 559,
+  	'#name' => 'IDCOMMERCE',
+  	'#attributes' => array('id' => 'IDCOMMERCE'),
+  );
+  $form['XMLREQ'] = array(
+    '#type' => 'hidden',
+    '#value' => $arrayOut['XMLREQ'],
+  	'#name' => 'XMLREQ',
+  	'#attributes' => array('id' => 'XMLREQ'),
+  );
+  $form['DIGITALSIGN'] = array(
+    '#type' => 'hidden',
+    '#value' => $arrayOut['DIGITALSIGN'],
+  	'#name' => 'DIGITALSIGN',
+  	'#attributes' => array('id' => 'SIGNATURE'),
+  );
+  $form['SESSIONKEY'] = array(
+    '#type' => 'hidden',
+    '#value' => $arrayOut['SESSIONKEY'],
+  	'#name' => 'SESSIONKEY',
+  	'#attributes' => array('id' => 'SESSIONKEY'),
+  );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Proceed to Alignet'),
+  );
+  return $form;
+}
+
+/**
+ * Payment method callback: settings form.
+ */
+function commerce_alignet_settings_form($settings = array()) {
+  $form = array();
+  $settings = (array) $settings + commerce_alignet_settings_default();
+
+  $form['mode'] = array(
+    '#type' => 'select',
+    '#title' => t('Mode'),
+    '#options' => array(
+      'TEST' => t('Test mode'),
+      'PROD' => t('Production mode'),
+    ),
+    '#required' => TRUE,
+    '#default_value' => $settings['mode'],
+  );
+  // Add more settings, if you need them...
+  return $form;
+}
+
+/**
+ * Get default settings.
+ */
+function commerce_alignet_settings_default() {
+  return array(
+    'mode' => 'TEST',
+  );
+}
